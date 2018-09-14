@@ -11,7 +11,7 @@ META = db.metadata
 FOOTAGE_PATH = 'R:/footage/resource/'
 
 FILTER_STRINGS = ('preview', 'tutorial')
-FILTER_SIZE = 100
+FILTER_SIZE = 400
 FILTER_SIZE_VIDEO = 0.5
 FILTER_SIZE_IMAGE = 0.05
 FILTER_DURATION = (0.1, 600)

@@ -26,7 +26,8 @@ def filter_file(file, is_video=True):
 def detect_image_sequence(path):
     obj_list = []
     for image_type in IMAGE_TYPES:
-        images = glob.glob(path + '/*.' + image_type)
+        glob_path = glob.escape(path)
+        images = glob.glob(glob_path + '/*.' + image_type)
         if len(images) == 0:
             continue
 
@@ -93,8 +94,9 @@ def detect_image_sequence(path):
 def detect_video(path):
     obj_list = []
     files = []
+    glob_path = glob.escape(path)
     for video_type in VIDEO_TYPES:
-        files.extend(glob.glob(path + '/*.' + video_type))
+        files.extend(glob.glob(glob_path + '/*.' + video_type))
 
     for file in files:
         file = file.lower()
@@ -186,7 +188,7 @@ def parse_folder(path, folder):
 
 
 def parse_path(progress, path):
-    time.clock()
+    start_time = time.clock()
     thread_count = min(int(round(os.cpu_count() / 2.0)), 5)
     progress.sig_log.emit('掃描文件...')
 
@@ -217,6 +219,6 @@ def parse_path(progress, path):
     progress.sig_log.emit(
         '已解析 {} 個素材 ({})'.format(
             process_count,
-            to_time_string(time.clock(), '時', '分', '秒')
+            to_time_string(time.clock() - start_time, '時', '分', '秒')
         )
     )

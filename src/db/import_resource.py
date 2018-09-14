@@ -87,7 +87,7 @@ def import_obj(progress, item):
 
 
 def import_resource(progress, item_list):
-    time.clock()
+    start_time = time.clock()
     progress.sig_max.emit(len(item_list))
     progress.sig_log.emit('初始化匯入程序...')
 
@@ -108,7 +108,7 @@ def import_resource(progress, item_list):
     progress.sig_log.emit(
         '已匯入 {} 個素材 ({})'.format(
             process_count,
-            to_time_string(time.clock(), '時', '分', '秒')
+            to_time_string(time.clock() - start_time, '時', '分', '秒')
         )
     )
     if progress.cancel:
