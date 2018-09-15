@@ -34,6 +34,9 @@
     <height>0</height>
    </size>
   </property>
+  <property name="acceptDrops">
+   <bool>true</bool>
+  </property>
   <property name="windowTitle">
    <string>夢想動畫素材匯入工具</string>
   </property>
@@ -143,6 +146,9 @@
       </property>
       <property name="contextMenuPolicy">
        <enum>Qt::DefaultContextMenu</enum>
+      </property>
+      <property name="acceptDrops">
+       <bool>false</bool>
       </property>
       <property name="editTriggers">
        <set>QAbstractItemView::DoubleClicked</set>

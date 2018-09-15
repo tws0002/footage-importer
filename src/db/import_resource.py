@@ -1,12 +1,10 @@
-import time
 import os
 import subprocess
 from shutil import copy
 import datetime
 from .settings import RESOURCE, FOOTAGE_PATH, VIDEO_TYPES
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from .update_cascade import update_cascade
-from ..utility import to_time_string
+from .update_meta import update_meta
 
 
 def import_obj(progress, item):
@@ -87,7 +85,6 @@ def import_obj(progress, item):
 
 
 def import_resource(progress, item_list):
-    start_time = time.clock()
     progress.sig_max.emit(len(item_list))
     progress.sig_log.emit('初始化匯入程序...')
 
@@ -103,12 +100,11 @@ def import_resource(progress, item_list):
                 process_count += 1
 
     progress.sig_log.emit('整理素材資料庫架構...')
-    update_cascade()
+    update_meta()
 
     progress.sig_log.emit(
-        '已匯入 {} 個素材 ({})'.format(
-            process_count,
-            to_time_string(time.clock() - start_time, '時', '分', '秒')
+        '已匯入 {} 個素材'.format(
+            process_count
         )
     )
     if progress.cancel:

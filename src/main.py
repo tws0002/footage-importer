@@ -7,6 +7,8 @@ from .confirm import ConfirmDialog
 from .progress import ParsePath, ImportResource
 from .widget_item import WidgetItem
 import pickle
+import time
+from .utility import to_time_string
 
 
 ui_path = os.path.join(os.path.dirname(__file__), 'main.ui')
@@ -23,8 +25,7 @@ class FootageImporter(QMainWindow):
             self.path_text,
             self.file_button,
             self.edit_tag_button,
-            self.toggle_tick_button,
-            self.flat_toggle
+            self.toggle_tick_button
         ]
 
         self.edit_group = [
@@ -91,6 +92,7 @@ class FootageImporter(QMainWindow):
                                 item.data['tag'].remove(text)
                     if len(tagEditor.actions) > 0:
                         item.data['tag'] = sorted(item.data['tag'])
+                        self.on_item_changed(item, 0)
 
     def on_path_changed(self, path):
         if os.path.isdir(path):
@@ -106,7 +108,7 @@ class FootageImporter(QMainWindow):
         if item.has_data:
             os.startfile(item.data['raw'])
         elif item.parent() is None:
-            root_path = os.path.split(self.path_text.text())
+            root_path = os.path.split(item.root)
             os.startfile(root_path[0] + '/' + item.text(0) + '/')
 
     def on_toggle_tick_click(self):
@@ -168,6 +170,8 @@ class FootageImporter(QMainWindow):
         self.progress_bar.setValue(self.progress_bar.value() + 1)
 
     def progress_log(self, text):
+        start_time = self.progress.start_time
+        text += ' ({})'.format(to_time_string(time.clock() - start_time, '時', '分', '秒'))
         self.log_text.setText(text)
 
     def progress_done(self):
@@ -179,22 +183,30 @@ class FootageImporter(QMainWindow):
         self.progress = None
 
     def add_item(self, obj):
+        is_flat = self.flat_toggle.checkState() == Qt.Checked
         if obj['parent'] in self.parents:
             parent_item = self.parents[obj['parent']]
         else:
-            parent_item = WidgetItem(self.edit_tree)
+            parent = None if is_flat else self.edit_tree
+            parent_item = WidgetItem(parent=parent)
+            parent_item.root = obj['root']
             parent_item.setExpanded(True)
             parent_item.setText(0, obj['parent'])
             parent_item.setFlags(parent_item.flags() | Qt.ItemIsTristate | Qt.ItemIsUserCheckable)
             self.parents[obj['parent']] = parent_item
 
-        item = WidgetItem(parent_item, obj)
+        child_parent = self.edit_tree if is_flat else parent_item
+        item = WidgetItem(parent=child_parent, data=obj)
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-        item.setCheckState(0, Qt.Checked)
+
+        check = Qt.Checked if item.is_active() else Qt.Unchecked
+        item.setCheckState(0, check)
+
         self.items.append(item)
 
     def prompt(self, text):
         confirm = ConfirmDialog(text, True, True)
+        confirm.move(self.frameGeometry().center() - confirm.frameGeometry().center())
         if confirm.exec_():
             pass
         self.setWindowState(self.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
@@ -221,7 +233,7 @@ class FootageImporter(QMainWindow):
         objs = []
         for item in self.items:
             data = item.data
-            data['collide'] = item.collide
+            data['error'] = item.error
             objs.append(data)
 
         with open(debug_file, 'wb') as f:
@@ -248,3 +260,25 @@ class FootageImporter(QMainWindow):
     def on_item_changed(self, item, column):
         if item.has_data:
             item.refresh_content()
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls() and self.progress is None:
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls() and self.progress is None:
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if self.progress is None:
+            paths = []
+            for url in event.mimeData().urls():
+                path = url.toLocalFile()
+                if os.path.isdir(path):
+                    paths.append(path)
+            if len(paths) > 0:
+                self.parse_path.start_func(paths)
