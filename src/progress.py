@@ -1,5 +1,6 @@
 from PyQt5.QtCore import QThread, pyqtSignal
 from .db import parse_path, import_resource
+import time
 
 
 class Progress(QThread):
@@ -16,6 +17,7 @@ class Progress(QThread):
         self.args = None
         self.name = ''
         self.cancel = False
+        self.start_time = 0
         self.connect_signal()
 
     def connect_signal(self):
@@ -31,6 +33,7 @@ class Progress(QThread):
         self.cancel = False
         self.parent.progress = self
         self.sig_title.emit(self.name)
+        self.start_time = time.clock()
         self.before_run()
         self.func(self, *self.args)
         self.after_run()
@@ -66,6 +69,7 @@ class ParsePath(Progress):
     def before_run(self):
         self.parent.parents = {}
         self.parent.items = []
+        self.parent.edit_tree.clear()
 
     def after_run(self):
         if self.cancel:

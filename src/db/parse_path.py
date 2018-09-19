@@ -1,13 +1,11 @@
 import os
 import glob
 from imohash import hashfile
-import time
 from .settings import RESOURCE, VIDEO_TYPES, FILTER_STRINGS, IMAGE_TYPES, FILTER_SIZE, FILTER_SIZE_VIDEO, FILTER_SIZE_IMAGE, FILTER_DURATION
 import re
 import subprocess
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from ..utility import to_time_string
 from opencc import OpenCC
 from PIL import Image
 
@@ -124,53 +122,72 @@ def parse_obj(progress, obj):
     name, ext = os.path.splitext(filename)
     ext = ext.strip('.')
     key = hashfile(obj['raw'], hexdigest=True)
-    is_collide = True if RESOURCE.find_one({'_id': key}) else False
+
+    cc = OpenCC('s2twp')
+    tag = '{}/{}'.format(obj['parent'], name)
+    tag = re.findall(u'[\u4e00-\u9fff]+|[a-zA-Z0-9]+', tag)
+    tag = list(set(tag))
+    tag = [cc.convert(t) for t in tag if t != '']
+
     obj = {
-        'collide': is_collide,
         'name': name,
         'type': ext,
         '_id': key,
         'raw': obj['raw'],
+        'tag': sorted(tag),
         **obj
     }
 
-    if is_collide:
+    col = RESOURCE.find_one({'_id': key})
+    if col is not None:
+        obj['tag'].extend(col['tag'])
+        obj['tag'] = sorted(list(set(obj['tag'])))
+        RESOURCE.update_one({'_id': key}, {'$set': {'tag': obj['tag']}})
+        obj['error'] = 'collide'
         return obj
     else:
-        cc = OpenCC('s2twp')
-        tag = '{}/{}'.format(obj['parent'], obj['name'])
-        tag = re.findall(u'[\u4e00-\u9fff]+|[a-zA-Z0-9]+', tag)
-        tag = list(set(tag))
-        tag = [cc.convert(t) for t in tag if t != '']
-        obj['tag'] = sorted(tag)
-
         if obj['type'] in VIDEO_TYPES:
-            cmd_meta = subprocess.check_output(
-                [
-                    'ffprobe',
-                    '-v', 'quiet',
-                    '-print_format', 'json',
-                    '-show_format',
-                    '-show_entries',
-                    'stream=r_frame_rate,width,height',
-                    obj['raw']
-                ]
-            )
+            try:
+                cmd_meta = subprocess.check_output(
+                    [
+                        'ffprobe',
+                        '-v', 'quiet',
+                        '-print_format', 'json',
+                        '-show_format',
+                        '-show_entries',
+                        'stream=r_frame_rate,width,height',
+                        obj['raw']
+                    ]
+                )
+            except subprocess.CalledProcessError as e:
+                print(obj['raw'])
+                print(e.output)
+                obj['error'] = 'command'
+                return obj
 
             meta = json.loads(cmd_meta.decode('utf-8'))
 
+            try:
+                frame_rate = eval(meta['streams'][0]['r_frame_rate'])
+            except ZeroDivisionError:
+                obj['error'] = 'command'
+                return obj
+
             obj.update({
                 'duration': float(meta['format']['duration']),
-                'fps': int(round(eval(meta['streams'][0]['r_frame_rate']))),
+                'fps': int(round(frame_rate)),
                 'width': meta['streams'][0]['width'],
                 'height': meta['streams'][0]['height'],
             })
 
-    if min(obj['width'], obj['height']) < FILTER_SIZE:
-        return None
+    if (obj['width'] + obj['height']) / 2.0 < FILTER_SIZE:
+        obj['error'] = 'size'
+        return obj
     elif obj['duration'] < FILTER_DURATION[0] or obj['duration'] > FILTER_DURATION[1]:
-        return None
+        obj['error'] = 'duration'
+        return obj
     else:
+        obj['error'] = 'null'
         return obj
 
 
@@ -182,24 +199,34 @@ def parse_folder(path, folder):
     obj_list.extend(detect_video(folder))
     obj_list.extend(detect_image_sequence(folder))
 
-    obj_list = [{**obj, 'parent': parent.lower()} for obj in obj_list]
+    obj_list = [{**obj, 'parent': parent.lower(), 'root': path} for obj in obj_list]
 
     return obj_list
 
 
-def parse_path(progress, path):
-    start_time = time.clock()
+def parse_path(progress, paths):
     thread_count = min(int(round(os.cpu_count() / 2.0)), 5)
-    progress.sig_log.emit('掃描文件...')
+    progress.sig_log.emit('掃描資料夾...')
 
-    folders = []
-    folders = [x[0] for x in os.walk(path)]
-    progress.sig_max.emit(len(folders))
+    if isinstance(paths, str):
+        paths = [paths]
+
+    folders_dict = {}
+    folder_count = 0
+    for path in paths:
+        fs = [x[0] for x in os.walk(path)]
+        folders_dict[path] = fs
+        folder_count += len(fs)
+
+    progress.sig_max.emit(folder_count)
 
     obj_list = []
     progress.sig_log.emit('整理文件列表...')
     with ThreadPoolExecutor(max_workers=thread_count) as executor:
-        parse_jobs = {executor.submit(parse_folder, path, folder): folder for folder in folders}
+        parse_jobs = {}
+        for path, folders in folders_dict.items():
+            for folder in folders:
+                parse_jobs[executor.submit(parse_folder, path, folder)] = folder
         for job in as_completed(parse_jobs):
             obj_list.extend(job.result())
             progress.sig_inc.emit()
@@ -217,8 +244,7 @@ def parse_path(progress, path):
             progress.sig_inc.emit()
 
     progress.sig_log.emit(
-        '已解析 {} 個素材 ({})'.format(
-            process_count,
-            to_time_string(time.clock() - start_time, '時', '分', '秒')
+        '已解析 {} 個素材'.format(
+            process_count
         )
     )

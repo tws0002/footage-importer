@@ -1,5 +1,8 @@
 import datetime
-from .settings import RESOURCE, META
+try:
+    from .settings import RESOURCE, META
+except ModuleNotFoundError:
+    from settings import RESOURCE, META
 
 
 def find_path(arr, path, is_end=False):
@@ -11,27 +14,29 @@ def find_path(arr, path, is_end=False):
                 if 'children' not in obj:
                     obj['children'] = []
                 return obj['children']
-    return False
+    return None
 
 
-def update_cascade():
-    cascade = {'data': []}
+def update_meta():
+    cascade = []
+    tag_cloud = {}
 
     for r in RESOURCE.find():
+        # cascade
         path = r['parent']
         paths = path.split('/')
 
-        path_data = cascade['data']
+        path_data = cascade
         for idx, path in enumerate(paths):
             if idx == len(paths) - 1:
-                if not find_path(path_data, path):
+                if find_path(path_data, path) is None:
                     path_data.append({
                         'value': [],
                         'label': path,
                     })
                 path_data = find_path(path_data, path, is_end=True)
                 break
-            elif not find_path(path_data, path):
+            elif find_path(path_data, path) is None:
                 path_data.append({
                     'value': [],
                     'label': path,
@@ -41,12 +46,34 @@ def update_cascade():
 
         path_data.append(r['_id'])
 
+        # tag_cloud
+        tag = r['tag']
+        for t in tag:
+            if len(t) == 1 or t.isdigit():
+                continue
+            if t not in tag_cloud:
+                tag_cloud[t] = 1
+            else:
+                tag_cloud[t] += 1
+
     META.update_one(
         {'_id': 'cascade'},
         {
             '$set': {
                 '_id': 'cascade',
-                'data': cascade['data'],
+                'data': cascade,
+                'date': datetime.datetime.utcnow(),
+            }
+        },
+        True
+    )
+
+    META.update_one(
+        {'_id': 'tagcloud'},
+        {
+            '$set': {
+                '_id': 'tagcloud',
+                'data': tag_cloud,
                 'date': datetime.datetime.utcnow(),
             }
         },
@@ -55,4 +82,4 @@ def update_cascade():
 
 
 if __name__ == '__main__':
-    update_cascade()
+    update_meta()
